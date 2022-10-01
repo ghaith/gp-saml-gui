@@ -106,7 +106,8 @@ class SAMLLoginView:
             content_details = '%d bytes of %s%s for ' % (cl, content_type, ('; charset='+charset) if charset else '')
         print('[RECEIVE] %sresource %s %s' % (content_details if h else '', m, uri), file=stderr)
 
-    def log_resource_text(self, resource, data, content_type, charset=None, show_headers=None):
+    def log_resource_text(self, resource, result, content_type, charset=None, show_headers=None):
+        data = resource.get_data_finish(result)
         content_details = '%d bytes of %s%s for ' % (len(data), content_type, ('; charset='+charset) if charset else '')
         print('[DATA   ] %sresource %s' % (content_details, resource.get_uri()), file=stderr)
         if show_headers:
@@ -148,7 +149,7 @@ class SAMLLoginView:
 
         if not self.success:
             if self.verbose > 1:
-                print("[SAML   ] No headers in response, searching body for xml comments", file=stderr)
+                print("[DEBUG  ] No headers in response, searching body for xml comments", file=stderr)
             # asynchronous call to fetch body content, continue processing in callback:
             mr.get_data(None, self.response_callback, ct)
 
@@ -162,30 +163,36 @@ class SAMLLoginView:
         fd = {}
         for comment in html_parser.comments:
             if self.verbose > 1:
-                print("[SAML   ] Found comment in response body: '%s'" % comment)
+                print("[DEBUG  ] Found comment in response body: '%s'" % comment)
             try:
+                # xml parser requires valid xml with a single root tag, but our expected content
+                # is just a list of data tags, so we need to improvise
                 xmlroot = ET.fromstring("<fakexmlroot>%s</fakexmlroot>" % comment)
+                # search for any valid first level xml tags (inside our fake root) that could contain SAML data
                 for elem in xmlroot:
                     if elem.tag.startswith("saml-") or elem.tag in COOKIE_FIELDS:
                         fd[elem.tag] = elem.text
             except ET.ParseError:
-                if self.verbose > 1:
-                    print("[SAML   ] Response body comment does not seem to contain SAML tags, skipping")
-                pass
+                pass  # silently ignore any comments that don't contain valid xml
 
         if self.verbose > 1:
-            print("[SAML   ] Finished parsing response for %s, found %s" % (resource.get_uri(), fd))
+            print("[DEBUG  ] Finished parsing response body for %s" % resource.get_uri())
         if fd:
+            if self.verbose:
+                print("[SAML   ] Got SAML result tags: %s" % fd)
             self.saml_result.update(fd, server=urlparse(resource.get_uri()).netloc)
         self.check_done()
 
-    def check_done(self):
+    def check_done(self, recheck_ms=1000):
         d = self.saml_result
         if 'saml-username' in d and ('prelogin-cookie' in d or 'portal-userauthcookie' in d):
             if self.verbose:
                 print("[SAML   ] Got all required SAML headers, done.", file=stderr)
             self.success = True
             Gtk.main_quit()
+        elif recheck_ms:
+            GLib.timeout_add(recheck_ms, self.check_done, 0)  # try again later once, with recheck disabled
+
 
 class TLSAdapter(requests.adapters.HTTPAdapter):
     '''Adapt to older TLS stacks that would raise errors otherwise.
