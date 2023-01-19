@@ -38,7 +38,7 @@ class CommentHtmlParser(HTMLParser):
         self.comments = []
 
     def handle_comment(self, data: str) -> None:
-        print("Found comment: '%s'" % data)
+        print("Found comment: '%s'" % data, file=stderr)
         self.comments.append(data)
 
 
