@@ -432,7 +432,7 @@ def main(args = None):
     else:
         varvals = {
             'HOST': quote('https://%s/%s:%s' % (server, if2auth[args.interface], cn)),
-            'USER': quote(un), 'COOKIE': quote(cv), 'OS': quote(args.ocos),
+            'VPNUSER': quote(un), 'COOKIE': quote(cv), 'OS': quote(args.ocos),
         }
         print('\n'.join('%s=%s' % pair for pair in varvals.items()))
 
